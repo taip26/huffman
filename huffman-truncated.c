@@ -291,11 +291,16 @@ struct DataItem **mostFrequent;
 int *freqArraySplit;
 char *characters;
 
-
+/**
+ * Gets the key from char to add to hashtable
+*/
 int getKey(char c) {
     return (int) c;
 }
 
+/**
+ * Stores structs of chars with their frequencies to a list
+*/
 void storeFreq() {
     freqIndex = 0;
     for (int i = 0; i < SIZE; i++) {
@@ -306,6 +311,10 @@ void storeFreq() {
     }
 }
 
+
+/**
+ * Gets the frequencies of all chars in a string and stores the struct in the unsortedFrequencyList array
+*/
 void getFreqOfString(char *string) {
     int length = strlen(string);
 
@@ -321,6 +330,9 @@ void getFreqOfString(char *string) {
     storeFreq();
 }
 
+/**
+ * Compares DataItem structs
+*/
 int compare(const void* a, const void* b){
     struct DataItem *left = *(struct DataItem **)a;
     struct DataItem *right = *(struct DataItem **)b;
@@ -337,6 +349,10 @@ int compare(const void* a, const void* b){
     return right->data - left->data;
 }
 
+/**
+ * Sorts the unsorted this, then populates the mostFrequent list with k members.
+ * The (k+1)th member is assigned '\' and all other char frequencies are added to it
+*/
 void storeMostFrequent(int kFreqChars) {
     qsort(unsortedFrequencyList, SIZE, sizeof(struct DataItem*), compare);
     item->data = 0;
@@ -353,6 +369,10 @@ void storeMostFrequent(int kFreqChars) {
     }
 }
 
+/**
+ * Splits the mostFrequent array into two arrays, one containing chars
+ * and the other containing the frequency
+*/
 void splitStructIntoArray(int kFreqChars) {
     for (int i = 0; i < kFreqChars + 1; i++) {
         freqArraySplit[i] = mostFrequent[i]->data;
@@ -360,12 +380,14 @@ void splitStructIntoArray(int kFreqChars) {
     }
 }
 
+/**
+ * Initializes the arrays with the specified size of most frequent chars
+*/
 void initArrays(int kFreqChars) {
   unsortedFrequencyList = malloc(SIZE*sizeof(struct DataItem*));
   freqArraySplit = malloc((kFreqChars+1)*sizeof(int));
   characters = malloc((kFreqChars+1)*sizeof(char));
   mostFrequent = malloc((kFreqChars+1)*sizeof(struct DataItem*));
-  if (mostFrequent == NULL || characters == NULL || freqArraySplit == NULL || unsortedFrequencyList == NULL) exit(1);
 }
 
 void storeTreeWrapper() {
@@ -387,9 +409,6 @@ int main(int argc, char *argv[]) {
   getFreqOfString(string);
   
   qsort(unsortedFrequencyList, SIZE, sizeof(struct DataItem*), compare);
-  /*for (int i = 0; i < freqIndex; i++) {
-    printf("%c, %d\n", unsortedFrequencyList[i]->key, unsortedFrequencyList[i]->data);
-  }*/
   storeMostFrequent(argFreqChars);
   splitStructIntoArray(argFreqChars);
   HuffmanCodes(characters, freqArraySplit, argFreqChars + 1);
