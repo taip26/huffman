@@ -8,7 +8,6 @@ Source code is from https://www.programiz.com/dsa/huffman-coding#google_vignette
 #include <stdbool.h>
 
 #define SIZE 64
-
 #define MAX_TREE_HT 50
 
 
@@ -157,6 +156,7 @@ void printHCodes(struct MinHNode *root, int arr[], int top) {
   }
 }
 
+
 // Wrapper function
 void HuffmanCodes(char item[], int freq[], int size) {
   struct MinHNode *root = buildHuffmanTree(item, freq, size);
@@ -284,10 +284,12 @@ void display() {
         BEGIN CUSTOM
 */
 
-struct DataItem* frequency[SIZE];
+struct DataItem **unsortedFrequencyList;
 int freqIndex;
 
-struct DataItem* mostFrequent[9];
+struct DataItem **mostFrequent;
+int *freqArraySplit;
+char *characters;
 
 
 int getKey(char c) {
@@ -298,14 +300,13 @@ void storeFreq() {
     freqIndex = 0;
     for (int i = 0; i < SIZE; i++) {
         if (hashArray[i] != NULL) {
-            frequency[freqIndex] = hashArray[i];
+            unsortedFrequencyList[freqIndex] = hashArray[i];
             freqIndex++;
         }
     }
 }
 
 void getFreqOfString(char *string) {
-
     int length = strlen(string);
 
     for (int i = 0; i < length; i++) {
@@ -336,38 +337,62 @@ int compare(const void* a, const void* b){
     return right->data - left->data;
 }
 
-void storeMostFrequent() {
-    qsort(frequency, SIZE, sizeof(struct DataItem*), compare);
+void storeMostFrequent(int kFreqChars) {
+    qsort(unsortedFrequencyList, SIZE, sizeof(struct DataItem*), compare);
     item->data = 0;
     item->key = (int) ('\\');
-    mostFrequent[8] = item;
+    mostFrequent[kFreqChars] = item;
     int i = 0;
     while (i < freqIndex) {
-        if (i < 8) {
-            mostFrequent[i] = frequency[i];
+        if (i < kFreqChars) {
+            mostFrequent[i] = unsortedFrequencyList[i];
         } else {
-            mostFrequent[8]->data +=frequency[i]->data;
+            mostFrequent[kFreqChars]->data += unsortedFrequencyList[i]->data;
         }
         i++;
     }
 }
 
-int freq[9];
-char characters[9];
-
-void splitStructIntoArray() {
-    for (int i = 0; i < 9; i++) {
-        freq[i] = mostFrequent[i]->data;
+void splitStructIntoArray(int kFreqChars) {
+    for (int i = 0; i < kFreqChars + 1; i++) {
+        freqArraySplit[i] = mostFrequent[i]->data;
         characters[i] = (char)mostFrequent[i]->key;
     }
 }
 
-int main() {
-    char string[] = "lskjheuhrnmscbxmzvioqwerjksdlfhqwpeuothgpqeurgnjaklsdbg4rgohalsjkdfnc vbhewuaipsjFKVBgowyqeiufhbahqowieufdkjlasdbkajsdbfkjbqmewnfAHFOISLAKJFHpqwuerhsjkdafnlkQKEHTPOQWIEJDkjasdnlfxvmbqweiurpgfbsadjkKJASDBFLBoiyasdbglqjhrhgqebpiwasdjkflqbwpieurbfaskjldfbqpweuibfqwiekdlsafbqepriubg";
-    getFreqOfString(string);
-    storeMostFrequent();
-    splitStructIntoArray();
-    int size = sizeof(characters) / sizeof(characters[0]);
-    HuffmanCodes(characters, freq, size);
-    
+void initArrays(int kFreqChars) {
+  unsortedFrequencyList = malloc(SIZE*sizeof(struct DataItem*));
+  freqArraySplit = malloc((kFreqChars+1)*sizeof(int));
+  characters = malloc((kFreqChars+1)*sizeof(char));
+  mostFrequent = malloc((kFreqChars+1)*sizeof(struct DataItem*));
+  if (mostFrequent == NULL || characters == NULL || freqArraySplit == NULL || unsortedFrequencyList == NULL) exit(1);
+}
+
+void storeTreeWrapper() {
+  //int size = sizeof(characters) / sizeof(characters[0]);
+  //struct MinHNode *root = buildHuffmanTree(characters, freqArraySplit, size);
+  //int arr[MAX_TREE_HT], top = 0;
+}
+
+int main(int argc, char *argv[]) {
+
+  if(argc != 3) {
+    printf("Evocation: <Input File> <Number of Frequent Characters>");
+    exit(1);
+  }
+
+  int argFreqChars = atoi(argv[2]);
+  initArrays(argFreqChars);
+  char string[] = "lskjheuhrnmscbxmzvioqwerjksdlfhqwpeuothgpqeurgnjaklsdbg4rgohalsjkdfnc vbhewuaipsjFKVBgowyqeiufhbahqowieufdkjlasdbkajsdbfkjbqmewnfAHFOISLAKJFHpqwuerhsjkdafnlkQKEHTPOQWIEJDkjasdnlfxvmbqweiurpgfbsadjkKJASDBFLBoiyasdbglqjhrhgqebpiwasdjkflqbwpieurbfaskjldfbqpweuibfqwiekdlsafbqepriubg";
+  getFreqOfString(string);
+  
+  qsort(unsortedFrequencyList, SIZE, sizeof(struct DataItem*), compare);
+  /*for (int i = 0; i < freqIndex; i++) {
+    printf("%c, %d\n", unsortedFrequencyList[i]->key, unsortedFrequencyList[i]->data);
+  }*/
+  storeMostFrequent(argFreqChars);
+  splitStructIntoArray(argFreqChars);
+  HuffmanCodes(characters, freqArraySplit, argFreqChars + 1);
+  
+  exit(0);
 }
