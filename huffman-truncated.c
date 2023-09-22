@@ -14,7 +14,8 @@ Source code is from https://www.programiz.com/dsa/huffman-coding#google_vignette
 
 uint8_t inputBuffer[BUFFERSIZE];
 uint8_t outputBuffer[BUFFERSIZE];
-int outputBufferPos = 0, inputBufferPos = 0, totalChars = 0, bitsToPrint, numBitsToPrint;
+int outputBufferPos = 0, inputBufferPos = 0, totalChars = 0, compressedSize = 0, bitsToPrint, numBitsToPrint, kFreqChars;
+struct MinHNode *treeRoot;
 
 void storeFreq();
 
@@ -199,11 +200,11 @@ void printHCodes(struct MinHNode *root, int arr[], int top) {
 * Prints the encoded tree into the memory buffer
 */
 void HuffmanCodes(char item[], int freq[], int size) {
-  struct MinHNode *root = buildHuffmanTree(item, freq, size);
+  treeRoot = buildHuffmanTree(item, freq, size);
 
   int arr[MAX_TREE_HT], top = 0;
 
-  printHCodes(root, arr, top);
+  printHCodes(treeRoot, arr, top);
 }
 
 /*
@@ -299,7 +300,7 @@ int compare(const void* a, const void* b){
  * Sorts the unsorted this, then populates the mostFrequent list with k members.
  * The (k+1)th member is assigned '\' and all other char frequencies are added to it
 */
-void storeMostFrequent(int kFreqChars) {
+void storeMostFrequent() {
     qsort(unsortedFrequencyList, TABLESIZE, sizeof(struct DataItem*), compare);
     struct DataItem *item = (struct DataItem*) malloc(sizeof(struct DataItem));
     item->data = 0;
@@ -320,7 +321,7 @@ void storeMostFrequent(int kFreqChars) {
  * Splits the mostFrequent array into two arrays, one containing chars
  * and the other containing the frequency of the chars
 */
-void splitStructIntoArray(int kFreqChars) {
+void splitStructIntoArray() {
     for (int i = 0; i < kFreqChars; i++) {
         freqArraySplit[i] = mostFrequent[i]->data;
         characters[i] = (char)mostFrequent[i]->key;
@@ -330,7 +331,7 @@ void splitStructIntoArray(int kFreqChars) {
 /**
  * Wrapper function to compress the header and encoded input to outputBuffer
 */
-void compressToBuffer(int kFreqChars) {
+void compressToBuffer() {
   writeToBuffer(outputBuffer, outputBufferPos, kFreqChars, 2);
   writeToBuffer(outputBuffer, outputBufferPos, totalChars, 2);
   storeMostFrequent(kFreqChars);
@@ -341,7 +342,7 @@ void compressToBuffer(int kFreqChars) {
 /**
  * Initializes the arrays with the specified size of most frequent chars
 */
-void init(int kFreqChars) {
+void init() {
   unsortedFrequencyList = malloc(TABLESIZE*sizeof(struct DataItem*));
   freqArraySplit = malloc(kFreqChars*sizeof(int));
   characters = malloc(kFreqChars*sizeof(char));
@@ -357,6 +358,33 @@ struct MinHNode *rebuildTreeFromEncoded(uint8_t* buffer) {
   printf("%d\n", numUniqueChars);
 }
 
+void getCompressedSize(struct MinHNode *root, int top) {
+  int i;
+  if (root->left) {
+    getCompressedSize(root->left, top + 1);
+  }
+  if (root->right) {
+    getCompressedSize(root->right, top + 1);
+  }
+  if (isLeaf(root)) {
+    if (root->item == '\\') {
+      compressedSize += (top + 8) * root->freq;
+    } else {
+      compressedSize += top * root->freq;
+    }
+  }
+}
+
+void printFileCompressionRatio() {
+  treeRoot = buildHuffmanTree(characters, freqArraySplit, kFreqChars);
+  int top = 0;
+  getCompressedSize(treeRoot, top);
+  printf("Compressed Size: %d bits\n", compressedSize);
+  int uncompressedSize = totalChars * 8;
+  printf("Uncompressed Size: %d bits\n", uncompressedSize);
+  printf("Compression Ratio: %.2f\n", (double)uncompressedSize / compressedSize);
+}
+
 FILE *fileptr;
 
 int main(int argc, char *argv[]) {
@@ -366,9 +394,9 @@ int main(int argc, char *argv[]) {
   }
 
   char *fileName = argv[1];
-  int argFreqChars = atoi(argv[2]) + 1;
+  kFreqChars = atoi(argv[2]) + 1;
 
-  init(argFreqChars);
+  init();
   fileptr = fopen(fileName, "r");
   if (fileptr == NULL) {
     printf("Error: File Not Found");
@@ -377,9 +405,11 @@ int main(int argc, char *argv[]) {
   char string[200];
   while(fgets(string, 200, fileptr)) {
     loadStringIntoBuffer(string);
+    totalChars += strlen(string);
   }
   fclose(fileptr);
   getFreqOfCharSeqInBuffer(inputBuffer, inputBufferPos, 1);
-  compressToBuffer(argFreqChars);
+  compressToBuffer();
+  printFileCompressionRatio();
   return 0;
 }
