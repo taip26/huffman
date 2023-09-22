@@ -6,10 +6,40 @@ Source code is from https://www.programiz.com/dsa/huffman-coding#google_vignette
 #include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <inttypes.h>
 
-#define SIZE 64
+#define TABLESIZE 256
 #define MAX_TREE_HT 50
+#define BUFFERSIZE 4096
 
+uint8_t inputBuffer[BUFFERSIZE];
+uint8_t outputBuffer[BUFFERSIZE];
+int outputBufferPos = 0, inputBufferPos = 0, totalChars = 0, bitsToPrint, numBitsToPrint;
+
+void storeFreq();
+
+/**
+* writes the current byte to buffer
+*/
+void writeToBuffer(uint8_t *buffer, int bufferPos, int bytesToWrite, int numBytes) {
+  int i;
+  for (i = 0; i < numBytes; i++) {
+    *(buffer + bufferPos) = (bytesToWrite >> (i*8)) & 0xff;
+    bufferPos++;
+  }
+}
+
+void printBufferAsInt(uint8_t *buffer, int bufferSize) {
+  for (int i = 0; i < bufferSize; i++) {
+    printf("%d\n", buffer[i]);
+  }
+}
+
+void printBufferAsChar(uint8_t *buffer, int bufferSize) {
+  for (int i = 0; i < bufferSize; i++) {
+    printf("%c\n", (char)buffer[i]);
+  }
+}
 
 struct MinHNode {
   char item;
@@ -142,6 +172,7 @@ struct MinHNode *buildHuffmanTree(char item[], int freq[], int size) {
 }
 
 void printHCodes(struct MinHNode *root, int arr[], int top) {
+  int i;
   if (root->left) {
     arr[top] = 0;
     printHCodes(root->left, arr, top + 1);
@@ -151,13 +182,22 @@ void printHCodes(struct MinHNode *root, int arr[], int top) {
     printHCodes(root->right, arr, top + 1);
   }
   if (isLeaf(root)) {
-    printf("  %c   | ", root->item);
-    printArray(arr, top);
+    writeToBuffer(outputBuffer, outputBufferPos, root->item, 1); //writes char
+    writeToBuffer(outputBuffer, outputBufferPos, top, 1); //writes len of bits
+    int decimal = 0;
+    int base = 0;
+    for (i = top - 1; i >=0 ; i--) {
+      decimal += arr[i] * (1 << base);
+      base++;
+    }
+    writeToBuffer(outputBuffer, outputBufferPos, decimal, 1); //writes the code in dec format
   }
 }
 
 
-// Wrapper function
+/**
+* Prints the encoded tree into the memory buffer
+*/
 void HuffmanCodes(char item[], int freq[], int size) {
   struct MinHNode *root = buildHuffmanTree(item, freq, size);
 
@@ -166,19 +206,9 @@ void HuffmanCodes(char item[], int freq[], int size) {
   printHCodes(root, arr, top);
 }
 
-// Print the array
-void printArray(int arr[], int n) {
-  int i;
-  for (i = 0; i < n; ++i)
-    printf("%d", arr[i]);
-
-  printf("\n");
-}
-
-
 /*
 
-        Start of Hashtable
+        Start of TableArr - Need to change to Hashtable in the future to store char literals
 
 */ 
 struct DataItem {
@@ -186,102 +216,11 @@ struct DataItem {
    int key;
 };
 
-struct DataItem* hashArray[SIZE]; 
-struct DataItem* dummyItem;
+struct DataItem* tableArray[TABLESIZE]; 
 struct DataItem* item;
 
-int hashCode(int key) {
-   return key % SIZE;
-}
-
-int collisionCode(int key) {
-   return (((key / SIZE) % (SIZE / 2)) * 2) + 1;
-}
-
-struct DataItem *search(int key) {
-   //get the hash 
-   int hashIndex = hashCode(key);  
-   int skipSize = collisionCode(key);
-   //move in array until an empty 
-   while(hashArray[hashIndex] != NULL) {
-	
-      if(hashArray[hashIndex]->key == key)
-         return hashArray[hashIndex]; 
-			
-      //go to next cell
-      hashIndex += skipSize;
-		
-      //wrap around the table
-      hashIndex %= SIZE;
-   }        
-	
-   return NULL;        
-}
-
-void insert(int key, int data) {
-
-    struct DataItem *item = (struct DataItem*) malloc(sizeof(struct DataItem));
-    item->data = data;  
-    item->key = key;
-
-    //get the hash 
-    int hashIndex = hashCode(key);
-    int skipSize = collisionCode(key);
-    //move in array until an empty or deleted cell
-    while(hashArray[hashIndex] != NULL && hashArray[hashIndex]->key != -1) {
-      //go to next cell
-      hashIndex += skipSize;
-		
-      //wrap around the table
-      hashIndex %= SIZE;
-    }
-	
-   hashArray[hashIndex] = item;
-}
-
-struct DataItem* delete(struct DataItem* item) {
-   int key = item->key;
-
-    //get the hash 
-    int hashIndex = hashCode(key);
-    int skipSize = collisionCode(key);
-    //move in array until an empty
-    while(hashArray[hashIndex] != NULL) {
-	
-      if(hashArray[hashIndex]->key == key) {
-         struct DataItem* temp = hashArray[hashIndex]; 
-			
-         //assign a dummy item at deleted position
-         hashArray[hashIndex] = dummyItem; 
-         return temp;
-      }
-		
-        //go to next cell
-        hashIndex += skipSize;
-            
-        //wrap around the table
-        hashIndex %= SIZE;
-    }      
-	
-    return NULL;        
-}
-
-void display() {
-   int i = 0;
-	
-   for(i = 0; i<SIZE; i++) {
-	
-      if(hashArray[i] != NULL)
-         printf(" (%d,%d)",hashArray[i]->key,hashArray[i]->data);
-      else
-         printf(" ~~ ");
-   }
-	
-   printf("\n");
-}
-
 /*
-        BEGIN CUSTOM
+        BEGIN COMPRESSION FROM FILE
 */
 
 struct DataItem **unsortedFrequencyList;
@@ -298,40 +237,47 @@ int getKey(char c) {
     return (int) c;
 }
 
+
 /**
  * Stores structs of chars with their frequencies to a list
 */
 void storeFreq() {
     freqIndex = 0;
-    for (int i = 0; i < SIZE; i++) {
-        if (hashArray[i] != NULL) {
-            unsortedFrequencyList[freqIndex] = hashArray[i];
+    for (int i = 0; i < TABLESIZE; i++) {
+        if (tableArray[i] != NULL) {
+            unsortedFrequencyList[freqIndex] = tableArray[i];
             freqIndex++;
         }
     }
 }
 
-
 /**
  * Gets the frequencies of all chars in a string and stores the struct in the unsortedFrequencyList array
 */
-void getFreqOfString(char *string) {
-    int length = strlen(string);
-
-    for (int i = 0; i < length; i++) {
-        int key = getKey(string[i]);
-        item = search(key);
-        if (item == NULL) {
-             insert(key, 1);
+void getFreqOfCharSeqInBuffer(uint8_t *buffer, int bufferSize, int seqLen) {
+    for (int i = 0; i < bufferSize; i++) {
+        int key = buffer[i];
+        if (tableArray[key] == NULL) {
+            struct DataItem *item = (struct DataItem*) malloc(sizeof(struct DataItem));
+            item->data = 1;  
+            item->key = key;
+            tableArray[key] = item;
         } else {
-             item->data++;
+             tableArray[key]->data++;
         }
     }
     storeFreq();
 }
 
+void loadStringIntoBuffer(char *string) {
+  for (int i = 0; string[i] != '\0'; i++) {
+    inputBuffer[inputBufferPos++] = (uint8_t)string[i];
+  }
+}
+
+
 /**
- * Compares DataItem structs
+ * Compares DataItem structs; sorts from greatest to least to get most frequent characters
 */
 int compare(const void* a, const void* b){
     struct DataItem *left = *(struct DataItem **)a;
@@ -354,16 +300,17 @@ int compare(const void* a, const void* b){
  * The (k+1)th member is assigned '\' and all other char frequencies are added to it
 */
 void storeMostFrequent(int kFreqChars) {
-    qsort(unsortedFrequencyList, SIZE, sizeof(struct DataItem*), compare);
+    qsort(unsortedFrequencyList, TABLESIZE, sizeof(struct DataItem*), compare);
+    struct DataItem *item = (struct DataItem*) malloc(sizeof(struct DataItem));
     item->data = 0;
     item->key = (int) ('\\');
-    mostFrequent[kFreqChars] = item;
+    mostFrequent[kFreqChars - 1] = item;
     int i = 0;
     while (i < freqIndex) {
-        if (i < kFreqChars) {
+        if (i < kFreqChars - 1) {
             mostFrequent[i] = unsortedFrequencyList[i];
         } else {
-            mostFrequent[kFreqChars]->data += unsortedFrequencyList[i]->data;
+            mostFrequent[kFreqChars - 1]->data += unsortedFrequencyList[i]->data;
         }
         i++;
     }
@@ -371,47 +318,68 @@ void storeMostFrequent(int kFreqChars) {
 
 /**
  * Splits the mostFrequent array into two arrays, one containing chars
- * and the other containing the frequency
+ * and the other containing the frequency of the chars
 */
 void splitStructIntoArray(int kFreqChars) {
-    for (int i = 0; i < kFreqChars + 1; i++) {
+    for (int i = 0; i < kFreqChars; i++) {
         freqArraySplit[i] = mostFrequent[i]->data;
         characters[i] = (char)mostFrequent[i]->key;
     }
 }
 
 /**
+ * Wrapper function to compress the header and encoded input to outputBuffer
+*/
+void compressToBuffer(int kFreqChars) {
+  writeToBuffer(outputBuffer, outputBufferPos, kFreqChars, 2);
+  writeToBuffer(outputBuffer, outputBufferPos, totalChars, 2);
+  storeMostFrequent(kFreqChars);
+  splitStructIntoArray(kFreqChars);
+  HuffmanCodes(characters, freqArraySplit, kFreqChars);
+}
+
+/**
  * Initializes the arrays with the specified size of most frequent chars
 */
-void initArrays(int kFreqChars) {
-  unsortedFrequencyList = malloc(SIZE*sizeof(struct DataItem*));
-  freqArraySplit = malloc((kFreqChars+1)*sizeof(int));
-  characters = malloc((kFreqChars+1)*sizeof(char));
-  mostFrequent = malloc((kFreqChars+1)*sizeof(struct DataItem*));
+void init(int kFreqChars) {
+  unsortedFrequencyList = malloc(TABLESIZE*sizeof(struct DataItem*));
+  freqArraySplit = malloc(kFreqChars*sizeof(int));
+  characters = malloc(kFreqChars*sizeof(char));
+  mostFrequent = malloc(kFreqChars*sizeof(struct DataItem*));
+  if (mostFrequent == NULL || characters == NULL || freqArraySplit == NULL || unsortedFrequencyList == NULL) exit(1);
 }
 
-void storeTreeWrapper() {
-  //int size = sizeof(characters) / sizeof(characters[0]);
-  //struct MinHNode *root = buildHuffmanTree(characters, freqArraySplit, size);
-  //int arr[MAX_TREE_HT], top = 0;
+/*
+* START DECOMPRESS
+*/
+struct MinHNode *rebuildTreeFromEncoded(uint8_t* buffer) {
+  uint16_t numUniqueChars = *(uint16_t*)buffer;
+  printf("%d\n", numUniqueChars);
 }
+
+FILE *fileptr;
 
 int main(int argc, char *argv[]) {
-
   if(argc != 3) {
     printf("Evocation: <Input File> <Number of Frequent Characters>");
     exit(1);
   }
 
-  int argFreqChars = atoi(argv[2]);
-  initArrays(argFreqChars);
-  char string[] = "lskjheuhrnmscbxmzvioqwerjksdlfhqwpeuothgpqeurgnjaklsdbg4rgohalsjkdfnc vbhewuaipsjFKVBgowyqeiufhbahqowieufdkjlasdbkajsdbfkjbqmewnfAHFOISLAKJFHpqwuerhsjkdafnlkQKEHTPOQWIEJDkjasdnlfxvmbqweiurpgfbsadjkKJASDBFLBoiyasdbglqjhrhgqebpiwasdjkflqbwpieurbfaskjldfbqpweuibfqwiekdlsafbqepriubg";
-  getFreqOfString(string);
-  
-  qsort(unsortedFrequencyList, SIZE, sizeof(struct DataItem*), compare);
-  storeMostFrequent(argFreqChars);
-  splitStructIntoArray(argFreqChars);
-  HuffmanCodes(characters, freqArraySplit, argFreqChars + 1);
-  
-  exit(0);
+  char *fileName = argv[1];
+  int argFreqChars = atoi(argv[2]) + 1;
+
+  init(argFreqChars);
+  fileptr = fopen(fileName, "r");
+  if (fileptr == NULL) {
+    printf("Error: File Not Found");
+    exit(1);
+  }
+  char string[200];
+  while(fgets(string, 200, fileptr)) {
+    loadStringIntoBuffer(string);
+  }
+  fclose(fileptr);
+  getFreqOfCharSeqInBuffer(inputBuffer, inputBufferPos, 1);
+  compressToBuffer(argFreqChars);
+  return 0;
 }
