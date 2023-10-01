@@ -7,6 +7,7 @@ Source code is from https://www.programiz.com/dsa/huffman-coding#google_vignette
 #include <stdlib.h>
 #include <stdbool.h>
 #include <inttypes.h>
+#include <math.h>
 
 #define TABLESIZE 256
 #define MAX_TREE_HT 50
@@ -14,19 +15,48 @@ Source code is from https://www.programiz.com/dsa/huffman-coding#google_vignette
 
 uint8_t inputBuffer[BUFFERSIZE];
 uint8_t outputBuffer[BUFFERSIZE];
-int outputBufferPos = 0, inputBufferPos = 0, totalChars = 0, compressedSize = 0, bitsToPrint, numBitsToPrint, kFreqChars;
+int outputBufferPos = 0, inputBufferPos = 0, totalChars = 0, compressedSize = 0, kFreqChars;
+int bitsToPrint = 0, numBitsToPrint = 0;
 struct MinHNode *treeRoot;
 
-void storeFreq();
+char *codeCharacters;
+int *codeValues, *codeLength;
+int codeIndex = 0;
 
 /**
-* writes the current byte to buffer
+* writes the current byte to input buffer
 */
-void writeToBuffer(uint8_t *buffer, int bufferPos, int bytesToWrite, int numBytes) {
+void writeToInputBuffer(int bytesToWrite, int numBytes) {
   int i;
   for (i = 0; i < numBytes; i++) {
-    *(buffer + bufferPos) = (bytesToWrite >> (i*8)) & 0xff;
-    bufferPos++;
+    *(inputBuffer + inputBufferPos) = (bytesToWrite >> (i*8)) & 0xff;
+    inputBufferPos++;
+  }
+}
+
+/**
+* writes the current byte to output buffer
+*/
+void writeToOutputBuffer(int bytesToWrite, int numBytes) {
+  int i;
+  for (i = 0; i < numBytes; i++) {
+    *(outputBuffer + outputBufferPos) = (bytesToWrite >> (i*8)) & 0xff;
+    outputBufferPos++;
+  }
+}
+
+void binprintf(int v)
+{
+    unsigned int mask=1<<((sizeof(int) << 1)-1);
+    while(mask) {
+        printf("%d", (v&mask ? 1 : 0));
+        mask >>= 1;
+    }
+}
+
+void printOutput() {
+  for (int i = 0; i < outputBufferPos; i++) {
+    binprintf(outputBuffer[i]);
   }
 }
 
@@ -172,6 +202,10 @@ struct MinHNode *buildHuffmanTree(char item[], int freq[], int size) {
   return extractMin(minHeap);
 }
 
+/**
+ * Prints the Huffman codes with their characters in the output buffer;
+ * also updates the code arrays
+*/
 void printHCodes(struct MinHNode *root, int arr[], int top) {
   int i;
   if (root->left) {
@@ -183,15 +217,51 @@ void printHCodes(struct MinHNode *root, int arr[], int top) {
     printHCodes(root->right, arr, top + 1);
   }
   if (isLeaf(root)) {
-    writeToBuffer(outputBuffer, outputBufferPos, root->item, 1); //writes char
-    writeToBuffer(outputBuffer, outputBufferPos, top, 1); //writes len of bits
+    writeToOutputBuffer(root->item, 1); //writes char
+    writeToOutputBuffer(top, 1); //writes len of bits
     int decimal = 0;
     int base = 0;
     for (i = top - 1; i >=0 ; i--) {
       decimal += arr[i] * (1 << base);
       base++;
     }
-    writeToBuffer(outputBuffer, outputBufferPos, decimal, 1); //writes the code in dec format
+    writeToOutputBuffer(decimal, 1); //writes the code in dec format
+    codeCharacters[codeIndex] = root->item;
+    codeValues[codeIndex] = decimal;
+    codeLength[codeIndex] = top;
+    codeIndex++;
+  }
+}
+
+void printTree(struct MinHNode *root, int depth) {
+  if (root == NULL) return;
+  printTree(root->right, depth + 1);
+  for (int i = 0; i < depth; i++)
+      printf("   ");
+  printf("%c\n", root->item);
+  printTree(root->left, depth + 1);
+}
+
+void printArray(int arr[], int n) {
+  int i;
+  for (i = 0; i < n; ++i)
+    printf("%d", arr[i]);
+
+  printf("\n");
+}
+
+void printCodes(struct MinHNode *root, int arr[], int top) {
+  if (root->left) {
+    arr[top] = 0;
+    printCodes(root->left, arr, top + 1);
+  }
+  if (root->right) {
+    arr[top] = 1;
+    printCodes(root->right, arr, top + 1);
+  }
+  if (isLeaf(root)) {
+    printf("  %c   | ", root->item);
+    printArray(arr, top);
   }
 }
 
@@ -205,6 +275,7 @@ void HuffmanCodes(char item[], int freq[], int size) {
   int arr[MAX_TREE_HT], top = 0;
 
   printHCodes(treeRoot, arr, top);
+  printCodes(treeRoot, arr, top);
 }
 
 /*
@@ -231,11 +302,32 @@ struct DataItem **mostFrequent;
 int *freqArraySplit;
 char *characters;
 
+
 /**
- * Gets the key from char to add to hashtable
+ * Gets the key from char sequence to add to hashtable
 */
 int getKey(char c) {
     return (int) c;
+}
+
+/**
+ * Gets the Huffman code from the current Huffman tree as an int
+*/
+int getCode(char c) {
+  for (int i = 0; i < codeIndex; i++) {
+    if (codeCharacters[i] == c) {
+      return codeValues[i];
+    }
+  }
+  return -1;
+}
+int getCodeLength(char c) {
+  for (int i = 0; i < codeIndex; i++) {
+    if (codeCharacters[i] == c) {
+      return codeLength[i];
+    }
+  }
+  return -1;
 }
 
 
@@ -328,15 +420,61 @@ void splitStructIntoArray() {
     }
 }
 
+bool inFreqArray(char c) {
+  for (int i = 0; i < kFreqChars; i++) {
+    if (characters[i] == c) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Encodes the values in the input buffer and prints them to the output buffer
+*/
+void encodeInput() {
+  for (int i = 0; i < inputBufferPos; i++) {
+    int bits;
+    int numBits;
+    if (!inFreqArray(inputBuffer[i])) {
+      bits = getCode('\\') << 8;
+      bits |= inputBuffer[i];
+      numBits = getCodeLength('\\') + 8;
+    } else { 
+      bits = getCode(inputBuffer[i]);
+      numBits = getCodeLength(inputBuffer[i]);
+    }
+    while (numBits > 0) {
+      int availableBits = 8 - numBitsToPrint;
+      if (numBits < availableBits) {
+        bitsToPrint |= (bits << (availableBits - numBits));
+        numBitsToPrint += numBits;
+        numBits = 0;
+      } else {
+        int leftover = numBits - availableBits;
+        bitsToPrint |= (bits >> leftover);
+        writeToOutputBuffer(bitsToPrint, 1);
+        bits &= ((1 << leftover) - 1);
+        numBits -= availableBits;
+        bitsToPrint = numBitsToPrint = 0;
+      }
+    }
+  }
+  if (numBitsToPrint > 0) {
+    writeToOutputBuffer(bitsToPrint, 1);
+  }
+}
+
 /**
  * Wrapper function to compress the header and encoded input to outputBuffer
 */
 void compressToBuffer() {
-  writeToBuffer(outputBuffer, outputBufferPos, kFreqChars, 2);
-  writeToBuffer(outputBuffer, outputBufferPos, totalChars, 2);
+  //writeToOutputBuffer(kFreqChars, 2);
+  //writeToOutputBuffer(totalChars, 2);
   storeMostFrequent(kFreqChars);
   splitStructIntoArray(kFreqChars);
   HuffmanCodes(characters, freqArraySplit, kFreqChars);
+  encodeInput();
 }
 
 /**
@@ -347,6 +485,9 @@ void init() {
   freqArraySplit = malloc(kFreqChars*sizeof(int));
   characters = malloc(kFreqChars*sizeof(char));
   mostFrequent = malloc(kFreqChars*sizeof(struct DataItem*));
+  codeCharacters = malloc(kFreqChars*sizeof(char));
+  codeValues = malloc(kFreqChars*sizeof(int));
+  codeLength = malloc(kFreqChars*sizeof(int));
   if (mostFrequent == NULL || characters == NULL || freqArraySplit == NULL || unsortedFrequencyList == NULL) exit(1);
 }
 
@@ -376,7 +517,6 @@ void getCompressedSize(struct MinHNode *root, int top) {
 }
 
 void printFileCompressionRatio() {
-  treeRoot = buildHuffmanTree(characters, freqArraySplit, kFreqChars);
   int top = 0;
   getCompressedSize(treeRoot, top);
   printf("Compressed Size: %d bits\n", compressedSize);
@@ -410,6 +550,12 @@ int main(int argc, char *argv[]) {
   fclose(fileptr);
   getFreqOfCharSeqInBuffer(inputBuffer, inputBufferPos, 1);
   compressToBuffer();
-  printFileCompressionRatio();
+
+  int arr[16];
+
+  //printTree(treeRoot, 0);
+  //printFileCompressionRatio();
+  printOutput();
+  //printf("%d", outputBufferPos);
   return 0;
 }
