@@ -15,6 +15,7 @@ Source code is from https://www.programiz.com/dsa/huffman-coding#google_vignette
 
 uint8_t inputBuffer[BUFFERSIZE];
 uint8_t outputBuffer[BUFFERSIZE];
+uint8_t decodeOutputBuffer[BUFFERSIZE];
 int outputBufferPos = 0, inputBufferPos = 0, totalChars = 0, compressedSize = 0, kFreqChars;
 int bitsToPrint = 0, numBitsToPrint = 0;
 struct MinHNode *treeRoot;
@@ -24,40 +25,73 @@ int *codeValues, *codeLength;
 int codeIndex = 0;
 
 /**
-* writes the current byte to input buffer
+* writes the current bytes to input buffer in little endian
 */
 void writeToInputBuffer(int bytesToWrite, int numBytes) {
-  int i;
-  for (i = 0; i < numBytes; i++) {
+  for (int i = 0; i < numBytes; i++) {
     *(inputBuffer + inputBufferPos) = (bytesToWrite >> (i*8)) & 0xff;
     inputBufferPos++;
   }
 }
 
 /**
-* writes the current byte to output buffer
+* writes the current bytes to output buffer in little endian
 */
 void writeToOutputBuffer(int bytesToWrite, int numBytes) {
-  int i;
-  for (i = 0; i < numBytes; i++) {
+  for (int i = numBytes - 1; i >= 0; i--) {
     *(outputBuffer + outputBufferPos) = (bytesToWrite >> (i*8)) & 0xff;
     outputBufferPos++;
   }
 }
 
-void binprintf(int v)
-{
+/**
+ * Writes the input buffer into an output file; if fp is null,
+ * defaults to a output.txt file
+*/
+void writeBufferIntoFile(uint8_t *buffer, int bufferSize, FILE *fp) {
+  if (fp == NULL) {
+    fp = fopen("output.txt", "w");
+  }
+  for (int i = 0; i < bufferSize; i++) {
+    fputc(buffer[i], fp);
+  }
+  fclose(fp);
+}
+
+/**
+ * Writes the input buffer into an output file; if fp is null,
+ * defaults to a output.txt file
+*/
+void writeBinaryBufferIntoFile(uint8_t *buffer, int bufferSize, FILE *fp) {
+  if (fp == NULL) {
+    fp = fopen("output.txt", "w");
+  }
+  for (int i = 0; i < bufferSize; i++) {
     unsigned int mask=1<<((sizeof(int) << 1)-1);
     while(mask) {
-        printf("%d", (v&mask ? 1 : 0));
-        mask >>= 1;
+      fputc((buffer[i] & mask ? 1 : 0), fp);
+      mask >>= 1;
+    }
+    
+  }
+  fclose(fp);
+}
+
+void binprintf(int v)
+{
+    unsigned int mask = 1 << ((sizeof(int) << 1)-1);
+    while(mask) {
+      printf("%d", (v & mask ? 1 : 0));
+      mask >>= 1;
     }
 }
 
 void printOutput() {
+  printf("Compressed Output:\n\n");
   for (int i = 0; i < outputBufferPos; i++) {
     binprintf(outputBuffer[i]);
   }
+  printf("\n\n");
 }
 
 void printBufferAsInt(uint8_t *buffer, int bufferSize) {
@@ -203,8 +237,8 @@ struct MinHNode *buildHuffmanTree(char item[], int freq[], int size) {
 }
 
 /**
- * Prints the Huffman codes with their characters in the output buffer;
- * also updates the code arrays
+ * Writes the Huffman codes with their characters, length of bits, and 
+ * code of character in the output buffer; also updates the code arrays
 */
 void printHCodes(struct MinHNode *root, int arr[], int top) {
   int i;
@@ -275,7 +309,6 @@ void HuffmanCodes(char item[], int freq[], int size) {
   int arr[MAX_TREE_HT], top = 0;
 
   printHCodes(treeRoot, arr, top);
-  printCodes(treeRoot, arr, top);
 }
 
 /*
@@ -328,6 +361,18 @@ int getCodeLength(char c) {
     }
   }
   return -1;
+}
+
+
+/**
+ * Reads n number of bytes as one integer using little endian
+*/
+int getBytesAsInt(uint8_t *buffer, int bufferOffset, int n) {
+  int res = 0;
+  for (int i = n - 1; i >= 0; i--) {
+    res |= buffer[bufferOffset] << (i * 8);
+    bufferOffset++;
+  }
 }
 
 
@@ -469,8 +514,8 @@ void encodeInput() {
  * Wrapper function to compress the header and encoded input to outputBuffer
 */
 void compressToBuffer() {
-  //writeToOutputBuffer(kFreqChars, 2);
-  //writeToOutputBuffer(totalChars, 2);
+  writeToOutputBuffer(kFreqChars, 2);
+  writeToOutputBuffer(totalChars, 2); //total number of characters in file; useful if 
   storeMostFrequent(kFreqChars);
   splitStructIntoArray(kFreqChars);
   HuffmanCodes(characters, freqArraySplit, kFreqChars);
@@ -488,39 +533,125 @@ void init() {
   codeCharacters = malloc(kFreqChars*sizeof(char));
   codeValues = malloc(kFreqChars*sizeof(int));
   codeLength = malloc(kFreqChars*sizeof(int));
-  if (mostFrequent == NULL || characters == NULL || freqArraySplit == NULL || unsortedFrequencyList == NULL) exit(1);
 }
 
 /*
 * START DECOMPRESS
 */
-struct MinHNode *rebuildTreeFromEncoded(uint8_t* buffer) {
-  uint16_t numUniqueChars = *(uint16_t*)buffer;
-  printf("%d\n", numUniqueChars);
+
+int outputIter = 0, decodePos = 0; totalC;
+
+/**
+ * Gets the nth bit in a byte
+*/
+int getNthBit(int byte, int n) {
+  return (byte >> (n-1)) & 0b1;
 }
 
-void getCompressedSize(struct MinHNode *root, int top) {
-  int i;
-  if (root->left) {
-    getCompressedSize(root->left, top + 1);
-  }
-  if (root->right) {
-    getCompressedSize(root->right, top + 1);
-  }
-  if (isLeaf(root)) {
-    if (root->item == '\\') {
-      compressedSize += (top + 8) * root->freq;
-    } else {
-      compressedSize += top * root->freq;
+/**
+ * Uses the inputs from the canonical representation of the tree
+ * to rebuild it
+*/
+struct MinHNode *rebuildFromCanonical(char *charac, int *codesLengths, int *codes, int kFreq) {
+  struct MinHNode *root = newNode('$', 0);
+  struct MinHNode *curr = root;
+
+  for (int i = 0; i < kFreq; i++) {
+    char symbol = charac[i];
+    int codeLength = codesLengths[i];
+    int code = codes[i];
+    for (int j = codeLength; j > 0; j--) {
+      int bit = getNthBit(code, j);
+      if (bit == 1) {
+        if (curr->right == NULL) {
+          curr->right = newNode('$', 0);
+        }
+        curr = curr->right;
+      } else {
+        if (curr->left == NULL) {
+          curr->left = newNode('$', 0);
+        }
+        curr = curr->left;
+      }
     }
+    curr->item = symbol;
+    curr = root;
+  }
+  return root;
+}
+
+/**
+ * Extracts necessary information from the header and rebuilds the tree
+*/
+void rebuildTreeFromEncoded(uint8_t* buffer) {
+  int kFreq = getBytesAsInt(buffer, outputIter, 2);
+  outputIter += 2;
+  totalC = getBytesAsInt(buffer, outputIter, 2);
+  outputIter += 2;
+
+  char charac[kFreq];
+  int codesLengths[kFreq];
+  int codes[kFreq];
+  int headerIndex = 0;
+  for (; outputIter < 4 + (3 * kFreq);) {
+    char c = getBytesAsInt(buffer, outputIter, 1);
+    charac[headerIndex] = c;
+    outputIter++;
+    int len = getBytesAsInt(buffer, outputIter, 1);
+    codesLengths[headerIndex] = len;
+    outputIter++;
+    int code = getBytesAsInt(buffer, outputIter, 1);
+    codes[headerIndex] = code;
+    outputIter++;
+    headerIndex++;
+  }
+  treeRoot = rebuildFromCanonical(charac, codesLengths, codes, kFreq);
+}
+
+
+/**
+ * Decodes the output buffer according to the current tree
+*/
+void decodeBuffer() {
+  int currByte = outputBuffer[outputIter];
+  int currBytePos = 8;
+  struct MinHNode *curr;
+  while (totalC > 0) {
+    curr = treeRoot;
+    while (!isLeaf(curr)) {
+      int bit = getNthBit(currByte, currBytePos);
+      currBytePos--;
+      if (bit == 1) {
+        curr = curr->right;
+      } else {
+        curr = curr->left;
+      }
+      if (currBytePos < 1) {
+        outputIter++;
+        currByte = outputBuffer[outputIter];
+        currBytePos = 8;
+      }
+    }
+    if (curr->item == '\\') {
+      int charByte = 0;
+      charByte |= (currByte << (8 - currBytePos));
+      outputIter++;
+      currByte = outputBuffer[outputIter];
+      charByte |= currByte >> currBytePos;
+      decodeOutputBuffer[decodePos++] = charByte;
+    }else {
+      decodeOutputBuffer[decodePos++] = curr->item;
+    }
+    totalC--;
   }
 }
+
+
 
 void printFileCompressionRatio() {
-  int top = 0;
-  getCompressedSize(treeRoot, top);
+  int compressedSize = outputBufferPos * 8;
   printf("Compressed Size: %d bits\n", compressedSize);
-  int uncompressedSize = totalChars * 8;
+  int uncompressedSize = inputBufferPos * 8;
   printf("Uncompressed Size: %d bits\n", uncompressedSize);
   printf("Compression Ratio: %.2f\n", (double)uncompressedSize / compressedSize);
 }
@@ -548,14 +679,21 @@ int main(int argc, char *argv[]) {
     totalChars += strlen(string);
   }
   fclose(fileptr);
+
   getFreqOfCharSeqInBuffer(inputBuffer, inputBufferPos, 1);
   compressToBuffer();
+  FILE *fp = fopen("encoded-output.txt", "w");
+  writeBinaryBufferIntoFile(outputBuffer, outputBufferPos, fp);
 
   int arr[16];
 
-  //printTree(treeRoot, 0);
-  //printFileCompressionRatio();
+  printFileCompressionRatio();
   printOutput();
-  //printf("%d", outputBufferPos);
+
+  rebuildTreeFromEncoded(outputBuffer);
+  decodeBuffer();
+  fp = fopen("decoded-output.txt", "w");
+  writeBufferIntoFile(decodeOutputBuffer, decodePos, fp);
+
   return 0;
 }
